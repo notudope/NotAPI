@@ -29,13 +29,12 @@ const genius = new Genius(process.env.GENIUS_API);
 const IS_PROD = process.env.NODE_ENV == "production";
 
 // Telegram Bot API
-const {BOT_TOKEN, BOTLOG_CHATID, WEBHOOK_SERVER} = process.env;
-const TELEGRAM_API = "https://api.telegram.org/bot" + BOT_TOKEN;
-const WEBHOOK_URI = "/webhook/" + BOT_TOKEN;
-const WEBHOOK_URL = WEBHOOK_SERVER.endsWith("/") ? WEBHOOK_SERVER.slice(0, -1) : WEBHOOK_SERVER + WEBHOOK_URI;
+const {BOT_TOKEN: token, BOTLOG_CHATID, WEBHOOK_SERVER: server} = process.env;
+const TELEGRAM_API = "https://api.telegram.org/bot" + token;
+const WEBHOOK_URL = (server.endsWith("/") ? server.slice(0, -1) : server) + "/webhook/" + token;
 const telegram = got.extend({prefixUrl: TELEGRAM_API});
 
-// Blacklisted IPs
+// Blacklisted IP
 const IP_BLACKLIST = Boolean(process.env.IP_BLACKLIST) ? process.env.IP_BLACKLIST.split(" ").filter(Boolean) : [];
 
 // REST API rate limiter
