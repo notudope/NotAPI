@@ -1,0 +1,9 @@
+{
+    "version": 2,
+    "cleanUrls": true,
+    "trailingSlash": false,
+    "github": {
+        "silent": true
+    },
+    "rewrites": [{"source": "/(.*)", "destination": "/api"}]
+}

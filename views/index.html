@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html dir="ltr" lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width,initial-scale=1" />
+        <title>{{~ it.page.title }}</title>
+        <meta name="description" content="{{~ it.page.description }}" />
+        <link rel="canonical" href="{{~ it.canonicalURL }}" />
+        <meta name="robots" content="{{= it.page.robots }}" />
+        <!-- Open Graph -->
+        <meta property="og:site_name" content="NotAPI" />
+        <meta property="og:url" content="{{~ it.canonicalURL }}" />
+        <meta property="og:title" content="{{~ it.page.title }}" />
+        <meta property="og:description" content="{{~ it.page.description }}" />
+        <meta property="og:image" content="{{~ it.baseURL }}/images/og.png" />
+        <meta property="og:image:type" content="image/png" />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta property="og:type" content="website" />
+        <!-- Twitter card -->
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:url" content="{{~ it.canonicalURL }}" />
+        <meta name="twitter:title" content="{{~ it.page.title }}" />
+        <meta name="twitter:description" content="{{~ it.page.description }}" />
+        <meta name="twitter:image" content="{{~ it.baseURL }}/images/og.png" />
+        <meta name="google" content="notranslate" />
+        <link rel="shortcut icon" href="/images/favicon.ico" type="image/x-icon" />
+        <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32.png" />
+        <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16.png" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon.png" />
+        <link rel="manifest" href="/site.webmanifest" />
+        <meta name="format-detection" content="telephone=no" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="theme-color" content="#000000" />
+        <link rel="stylesheet" href="/style.css" />
+        <link rel="preload" href="/style.css" as="style" />
+    </head>
+    <body>
+        <main>
+            <a href="/"><h1>{{~ it.title }}</h1></a>
+            <p class="desc">{{~ it.description }}</p>
+        </main>
+        <script
+            src="https://cdn.jsdelivr.net/npm/quicklink@2.2.0/dist/quicklink.umd.js"
+            integrity="sha256-4kQf9z5ntdQrzsBC3YSHnEz02Z9C1UeW/E9OgnvlzSY="
+            crossorigin="anonymous"></script>
+        <script nonce="{{~ it.nonce }}">
+            quicklink.listen();
+        </script>
+    </body>
+</html>
