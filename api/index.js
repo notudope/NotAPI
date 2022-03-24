@@ -1,6 +1,7 @@
 import * as dotenv from "dotenv";
 dotenv.config();
 import {resolve} from "path";
+import {randomBytes} from "crypto";
 
 // express
 import express from "express";
@@ -15,11 +16,10 @@ import {IpFilter} from "express-ipfilter";
 
 // helpers/utilities
 import got from "got";
-import geoip from "geoip-lite";
-import {v4 as uuidv4} from "uuid";
 import pify from "pify";
 import delay from "delay";
 import PQueue from "p-queue";
+import geoip from "geoip-lite";
 
 // API dependency
 import morse from "morse-decoder";
@@ -40,14 +40,14 @@ const IP_BLACKLIST = Boolean(process.env.IP_BLACKLIST) ? process.env.IP_BLACKLIS
 // REST API rate limiter
 const queue = new PQueue({concurrency: 3});
 // Global nonce
-const nouidv4 = uuidv4();
+const ranuid = randomBytes(9).toString("hex");
 
 const app = express();
 app.set("trust proxy", true);
 app.use(express.urlencoded({extended: true}));
 app.use(express.json());
 app.use(function (req, res, next) {
-    res.locals.nonce = nouidv4.replace(/-/g, "");
+    res.locals.nonce = ranuid;
     res.locals.baseURL = getURL(req, false);
     res.locals.canonicalURL = getURL(req, true);
     next();
@@ -218,9 +218,8 @@ async function NotAPI(req, res) {
             is_api = true;
             try {
                 const headers = {Authorization: `Bearer ${process.env.SPAMWATCH_API}`};
-                const resp = await got("https://api.spamwat.ch/banlist/" + id, {headers}).json();
-                resp.date = new Date(resp.date * 1000);
-                const ban = {...resp};
+                const ban = await got("https://api.spamwat.ch/banlist/" + id, {headers}).json();
+                ban.date = new Date(ban.date * 1000);
                 data["error"] = "";
                 data = {...data, ...ban};
             } catch (err) {
