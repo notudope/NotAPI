@@ -19,6 +19,7 @@ import got from "got";
 import pify from "pify";
 import delay from "delay";
 import PQueue from "p-queue";
+import Cron from "croner";
 import geoip from "geoip-lite";
 
 // API dependency
@@ -44,24 +45,27 @@ const ranuid = randomBytes(9).toString("hex");
 
 const app = express();
 app.set("trust proxy", true);
-app.use(express.urlencoded({extended: true}));
-app.use(express.json());
-app.use(function (req, res, next) {
+app.use(express.urlencoded({extended: true}), express.json(), (req, res, next) => {
     res.locals.nonce = ranuid;
     res.locals.baseURL = getURL(req, false);
     res.locals.canonicalURL = getURL(req, true);
     next();
 });
 Eta.configure({
-    cache: false,
+    async: true,
+    cache: IS_PROD,
     tags: ["{{", "}}"],
     varName: "it",
 });
 app.engine("html", Eta.renderFile);
 app.set("view engine", "html");
 app.set("views", resolve("views"));
-app.use(express.static(resolve("public"), {index: false, maxAge: "30 days"}));
 app.use(
+    express.static(resolve("public"), {
+        index: false,
+        maxAge: "30 days",
+        setHeaders: (res) => res.set("x-timestamp", Date.now()),
+    }),
     minifyHTML({
         override: true,
         exception_url: false,
@@ -75,9 +79,7 @@ app.use(
             minifyCSS: true,
         },
     }),
-);
-app.use(compression());
-app.use(
+    compression(),
     helmet({
         contentSecurityPolicy: {
             useDefaults: false,
@@ -93,8 +95,6 @@ app.use(
         },
         dnsPrefetchControl: {allow: true},
     }),
-);
-app.use(
     permissionsPolicy({
         features: {
             accelerometer: [],
@@ -108,29 +108,27 @@ app.use(
             interestCohort: [],
         },
     }),
+    useragent.express(),
+    (req, res, next) => {
+        const ip = req.ip;
+        const ua = req.useragent;
+        const uam = {
+            browser: ua.browser,
+            version: ua.version,
+            os: ua.os,
+            platform: ua.platform,
+            source: ua.source,
+        };
+        delete req.useragent;
+        if (ip == "127.0.0.1" || ip == "::1") {
+            res.locals.info = {ip, ...uam};
+        } else {
+            // const {range, eu, ll, metro, area, ...geo} = geoip.lookup(ip);
+            res.locals.info = {ip, ...geoip.lookup(ip), ...uam};
+        }
+        next();
+    },
 );
-app.use(useragent.express(), function (req, res, next) {
-    let ip = (req.headers["x-forwarded-for"] || "").replace(/:\d+$/, "") || req.connection.remoteAddress;
-    if (ip.includes("::ffff:")) {
-        ip = ip.split(":").reverse()[0];
-    }
-    const ua = req.useragent;
-    const uam = {
-        browser: ua.browser,
-        version: ua.version,
-        os: ua.os,
-        platform: ua.platform,
-        source: ua.source,
-    };
-    delete req.useragent;
-    if (ip == "127.0.0.1" || ip == "::1") {
-        res.locals.info = {ip, ...uam};
-    } else {
-        // const {range, eu, ll, metro, area, ...geo} = geoip.lookup(ip);
-        res.locals.info = {ip, ...geoip.lookup(ip), ...uam};
-    }
-    next();
-});
 
 function getURL(req, canonical = false) {
     const url = (canonical ? `https://${req.headers.host}${req.originalUrl}` : `https://${req.headers.host}`)
@@ -150,7 +148,7 @@ function setNoCache(res) {
 async function renderPage(req, res, template) {
     res.set("Content-Type", "text/html");
     res.set("Cache-Control", "public, max-age=2592000"); // 30 days
-    return res.render("index", {
+    return void res.render("index", {
         ...{
             nonce: res.locals.nonce,
             baseURL: res.locals.baseURL,
@@ -165,7 +163,7 @@ async function NotAPI(req, res) {
     let is_api = false;
     const {api} = req.params;
     const {en, de, id, q} = req.query;
-    await delay(150);
+    await delay.range(150, 500);
     // morse code
     if (api == "morse") {
         if (en) {
@@ -303,7 +301,15 @@ async function notify(res, data) {
     }
 }
 
-app.get("/", async function (req, res) {
+const ping = new Cron("0 0 * * * *", {maxRuns: Infinity, paused: true}, async () => {
+    await got(server, {
+        retry: {
+            limit: 0,
+        },
+    }); // 1 hours
+});
+
+app.get("/", async (req, res) => {
     const template = {
         page: {
             title: "NotAPI",
@@ -314,24 +320,26 @@ app.get("/", async function (req, res) {
         description: `A simple multi-featured API by <a href="https://github.com/notudope" title="GitHub @notudope">@notudope</a><br>How to use <a href="https://github.com/notudope/NotAPI" title="GitHub NotAPI">→ read here...</a>`,
     };
     res.status(200);
-    return await renderPage(req, res, template);
+    await renderPage(req, res, template);
 });
 
-app.get("/api/:api", IpFilter(IP_BLACKLIST, {mode: "deny"}), cors(), async function (req, res) {
+app.get("/api/:api", IpFilter(IP_BLACKLIST, {mode: "deny"}), cors(), async (req, res) => {
     if (req.params) {
         const {is_api, data} = await queueNotAPI(req, res);
         if (is_api) {
+            ping.pause();
             res.set("Content-Type", "application/json");
             setNoCache(res);
             res.status(200);
             await notify(res, data);
+            ping.resume();
             return res.json({...data});
         }
     }
-    return res.redirect(302, "/");
+    return res.status(320).redirect("/");
 });
 
-app.all("*", async function (req, res) {
+app.all("*", async (req, res) => {
     const template = {
         page: {
             title: "404 - NotAPI",
@@ -342,16 +350,19 @@ app.all("*", async function (req, res) {
         description: "Didn’t find anything here!",
     };
     res.status(404);
-    return await renderPage(req, res, template);
+    await renderPage(req, res, template);
 });
 
 if (!IS_PROD) {
     const PORT = process.env.PORT || 8080;
-    app.listen(PORT, async () => console.log(`🚀 Server listening on http://127.0.0.1:${PORT}`));
+    app.listen(PORT, async () => void console.log(`🚀 Server listening on http://127.0.0.1:${PORT}`));
 }
 
 (async () => {
     await webhookInit();
+    if (IS_PROD) {
+        ping.resume();
+    }
 })();
 
 export default app;
