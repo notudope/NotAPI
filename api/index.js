@@ -5,8 +5,8 @@ import {randomBytes} from "crypto";
 // express
 import express from "express";
 import {configure, renderFile} from "eta";
-// import minifyHTML from "express-minify-html-terser";
-// import compression from "compression";
+//import minifyHTML from "express-minify-html-terser";
+//import compression from "compression";
 import helmet from "helmet";
 import permissionsPolicy from "permissions-policy";
 import useragent from "express-useragent";
@@ -50,7 +50,7 @@ const queue = new PQueue({concurrency: 3});
 const ranuid = randomBytes(9).toString("hex");
 
 const app = express();
-// const router = express.Router();
+//const router = express.Router();
 app.set("trust proxy", true);
 app.use(express.urlencoded({extended: true}));
 app.use(express.json());
@@ -133,7 +133,7 @@ app.use(
         if (ip == "127.0.0.1" || ip == "::1") {
             res.locals.info = {ip, ...uam};
         } else {
-            // const {range, eu, ll, metro, area, ...geo} = geoip.lookup(ip);
+            //const {range, eu, ll, metro, area, ...geo} = geoip.lookup(ip);
             res.locals.info = {ip, ...geoip.lookup(ip), ...uam};
         }
         next();
@@ -351,7 +351,7 @@ app.get("/api/:api", async (req, res, next) => {
     const socials = ["telegram", "discord", "twitter", "facebook", "linkedin", "reddit", "bot"];
     const ua = res.locals.info.source.toLowerCase();
     if (socials.some((x) => ua.includes(x))) {
-        return res.status(403).send("Bot detected 🤖");
+        return res.status(403).send("Bot not allowed.");
     }
     if (IPS_BLACKLIST.includes(req.ip)) {
         return next();
