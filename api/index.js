@@ -1,11 +1,11 @@
-import * as dotenv from "dotenv";
+import dotenv from "dotenv";
 dotenv.config();
 import {resolve} from "path";
 import {randomBytes} from "crypto";
 
 // express
 import express from "express";
-import * as Eta from "eta";
+import {configure, renderFile} from "eta";
 import minifyHTML from "express-minify-html-terser";
 import compression from "compression";
 import helmet from "helmet";
@@ -27,37 +27,41 @@ import morse from "morse-decoder";
 import romans from "romans";
 import {Client as Genius} from "genius-lyrics";
 const genius = new Genius(process.env.GENIUS_API);
-const IS_PROD = process.env.NODE_ENV == "production";
+
+// Environment
+const {NODE_ENV, BOT_TOKEN, WEBHOOK_SERVER, BOTLOG_CHATID, IP_BLACKLIST} = process.env;
+const IS_PROD = Boolean(NODE_ENV) && NODE_ENV == "production";
+const IPS_BLACKLIST = (Boolean(IP_BLACKLIST) && IP_BLACKLIST.split(" ").filter(Boolean)) || [];
 
 // Telegram Bot API
-const {BOT_TOKEN: token, BOTLOG_CHATID, WEBHOOK_SERVER: server} = process.env;
-const TELEGRAM_API = "https://api.telegram.org/bot" + token;
-const WEBHOOK_URL = (server.endsWith("/") ? server.slice(0, -1) : server) + "/webhook/" + token;
+const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
+const WEBHOOK_URL = `${WEBHOOK_SERVER.replace(/\/+$/, "")}/webhook/${BOT_TOKEN}`;
 const telegram = got.extend({prefixUrl: TELEGRAM_API});
-
-// Blacklisted IP
-const IP_BLACKLIST = Boolean(process.env.IP_BLACKLIST) ? process.env.IP_BLACKLIST.split(" ").filter(Boolean) : [];
 
 // REST API rate limiter
 const queue = new PQueue({concurrency: 3});
+
 // Global nonce
 const ranuid = randomBytes(9).toString("hex");
 
 const app = express();
+// const router = express.Router();
 app.set("trust proxy", true);
-app.use(express.urlencoded({extended: true}), express.json(), (req, res, next) => {
+app.use(express.urlencoded({extended: true}));
+app.use(express.json());
+app.use((req, res, next) => {
     res.locals.nonce = ranuid;
     res.locals.baseURL = getURL(req, false);
     res.locals.canonicalURL = getURL(req, true);
     next();
 });
-Eta.configure({
+configure({
     async: true,
     cache: IS_PROD,
     tags: ["{{", "}}"],
     varName: "it",
 });
-app.engine("html", Eta.renderFile);
+app.engine("html", renderFile);
 app.set("view engine", "html");
 app.set("views", resolve("views"));
 app.use(
@@ -134,20 +138,20 @@ function getURL(req, canonical = false) {
     const url = (canonical ? `https://${req.headers.host}${req.originalUrl}` : `https://${req.headers.host}`)
         .replace("www.", "")
         .toLowerCase();
-    return (url.endsWith("/") ? url.slice(0, -1) : url).trim();
+    return url.replace(/\/+$/, "").trim();
 }
 
 function setNoCache(res) {
     const date = new Date();
     date.setFullYear(date.getFullYear() - 1);
-    res.set("Expires", date.toUTCString());
-    res.set("Pragma", "no-cache");
-    res.set("Cache-Control", "public, no-cache");
+    res.set("expires", date.toUTCString());
+    res.set("pragma", "no-cache");
+    res.set("cache-control", "public, no-cache");
 }
 
 async function renderPage(req, res, template) {
-    res.set("Content-Type", "text/html");
-    res.set("Cache-Control", "public, max-age=2592000"); // 30 days
+    res.set("content-type", "text/html");
+    res.set("cache-control", "public, max-age=2592000"); // 30 days
     return void res.render("index", {
         ...{
             nonce: res.locals.nonce,
@@ -307,7 +311,7 @@ async function notify(res, data) {
 
 const ping = new Cron("0 0 * * * *", {maxRuns: Infinity, paused: true}, async () => {
     try {
-        await got(server, {
+        await got(WEBHOOK_SERVER, {
             retry: {
                 limit: 0,
             },
@@ -332,12 +336,12 @@ app.get("/", async (req, res) => {
     await renderPage(req, res, template);
 });
 
-app.get("/api/:api", IpFilter(IP_BLACKLIST, {mode: "deny"}), cors(), async (req, res) => {
+app.get("/api/:api", IpFilter(IPS_BLACKLIST, {mode: "deny"}), cors(), async (req, res) => {
     if (req.params) {
         const {is_api, data} = await queueNotAPI(req, res);
         if (is_api) {
             ping.pause();
-            res.set("Content-Type", "application/json");
+            res.set("content-type", "application/json");
             setNoCache(res);
             res.status(200);
             await notify(res, data);
