@@ -252,9 +252,15 @@ async function queueNotAPI(req, res) {
 
 async function webhookInit() {
     if (IS_PROD) {
-        await telegram("deleteWebhook?url=" + WEBHOOK_URL);
-        await telegram("getUpdates?offset=-1");
-        await telegram("setWebhook?url=" + WEBHOOK_URL);
+        try {
+            await telegram("deleteWebhook?url=" + WEBHOOK_URL);
+        } catch (_) {}
+        try {
+            await telegram("getUpdates?offset=-1");
+        } catch (_) {}
+        try {
+            await telegram("setWebhook?url=" + WEBHOOK_URL);
+        } catch (_) {}
     } else {
         const {result} = await telegram("getMe").json();
         console.log(result);
@@ -292,21 +298,24 @@ async function notify(res, data) {
     });
     try {
         await sendMessage(`<pre>${result}</pre>\n\n${info}`);
-    } catch (err) {
+    } catch (_) {
         try {
             await sendMessage(`<pre>${err}</pre>\n\n${info}`);
-        } catch (pass) {
-            // pass
-        }
+        } catch (__) {}
     }
 }
 
 const ping = new Cron("0 0 * * * *", {maxRuns: Infinity, paused: true}, async () => {
-    await got(server, {
-        retry: {
-            limit: 0,
-        },
-    }); // 1 hours
+    try {
+        await got(server, {
+            retry: {
+                limit: 0,
+            },
+            timeout: {
+                request: 1000,
+            },
+        }); // 1 hours
+    } catch (_) {}
 });
 
 app.get("/", async (req, res) => {
