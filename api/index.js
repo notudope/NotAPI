@@ -26,9 +26,10 @@ import {Client as Genius} from "genius-lyrics";
 const genius = new Genius(process.env.GENIUS_API);
 
 // Environment
-const {NODE_ENV, BOT_TOKEN, WEBHOOK_SERVER, BOTLOG_CHATID, IP_BLACKLIST} = process.env;
+const {NODE_ENV, BOT_TOKEN, WEBHOOK_SERVER, BOTLOG_CHATID, IP_BLACKLIST, UA_BLACKLIST} = process.env;
 const IS_PROD = Boolean(NODE_ENV) && NODE_ENV == "production";
 const IPS_BLACKLIST = (Boolean(IP_BLACKLIST) && IP_BLACKLIST.split(" ").filter(Boolean)) || [];
+const UAS_BLACKLIST = (Boolean(UA_BLACKLIST) && UA_BLACKLIST.split(" ").filter(Boolean)) || [];
 
 // Telegram Bot API
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
@@ -348,9 +349,7 @@ app.get("/", async (req, res) => {
 });
 
 app.get("/api/:api", async (req, res, next) => {
-    const socials = ["telegram", "discord", "twitter", "facebook", "linkedin", "reddit", "bot"];
-    const ua = res.locals.info.source.toLowerCase();
-    if (socials.some((x) => ua.includes(x))) {
+    if (UAS_BLACKLIST.some((x) => req.get("User-Agent").toLowerCase().includes(x))) {
         return res.status(403).send("Bot not allowed.");
     }
     if (IPS_BLACKLIST.includes(req.ip)) {
