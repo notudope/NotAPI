@@ -1,13 +1,12 @@
-import dotenv from "dotenv";
-dotenv.config();
+import "dotenv/config";
 import {resolve} from "path";
 import {randomBytes} from "crypto";
 
 // express
 import express from "express";
 import {configure, renderFile} from "eta";
-import minifyHTML from "express-minify-html-terser";
-import compression from "compression";
+// import minifyHTML from "express-minify-html-terser";
+// import compression from "compression";
 import helmet from "helmet";
 import permissionsPolicy from "permissions-policy";
 import useragent from "express-useragent";
@@ -40,7 +39,7 @@ const telegram = got.extend({
         limit: 0,
     },
     timeout: {
-        request: 1000,
+        request: 3000,
     },
 });
 
@@ -76,6 +75,7 @@ app.use(
         maxAge: "30 days",
         setHeaders: (res) => res.set("X-Timestamp", Date.now()),
     }),
+    /*
     minifyHTML({
         override: true,
         exception_url: false,
@@ -89,7 +89,7 @@ app.use(
             minifyCSS: true,
         },
     }),
-    compression(),
+    compression(),*/
     helmet({
         contentSecurityPolicy: {
             useDefaults: false,
@@ -322,7 +322,7 @@ const ping = new Cron("0 0 * * * *", {maxRuns: Infinity, paused: true}, async ()
                 limit: 0,
             },
             timeout: {
-                request: 1000,
+                request: 3000,
             },
         }); // 1 hours
     } catch (_) {}
