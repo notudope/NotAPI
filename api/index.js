@@ -36,7 +36,15 @@ const IPS_BLACKLIST = (Boolean(IP_BLACKLIST) && IP_BLACKLIST.split(" ").filter(B
 // Telegram Bot API
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 const WEBHOOK_URL = `${WEBHOOK_SERVER.replace(/\/+$/, "")}/webhook/${BOT_TOKEN}`;
-const telegram = got.extend({prefixUrl: TELEGRAM_API});
+const telegram = got.extend({
+    prefixUrl: TELEGRAM_API,
+    retry: {
+        limit: 0,
+    },
+    timeout: {
+        request: 1000,
+    },
+});
 
 // REST API rate limiter
 const queue = new PQueue({concurrency: 3});
