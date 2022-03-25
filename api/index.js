@@ -343,6 +343,11 @@ app.get("/", async (req, res) => {
 });
 
 app.get("/api/:api", async (req, res, next) => {
+    const socials = ["telegram", "discord", "twitter", "facebook", "linkedin", "reddit", "bot"];
+    const ua = res.locals.info.source.toLowerCase();
+    if (socials.some((x) => ua.includes(x))) {
+        return res.status(403).send("Bot detected 🤖");
+    }
     if (IPS_BLACKLIST.includes(req.ip)) {
         return next();
     }
