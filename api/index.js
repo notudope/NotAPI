@@ -9,10 +9,8 @@ import {configure, renderFile} from "eta";
 import minifyHTML from "express-minify-html-terser";
 import compression from "compression";
 import helmet from "helmet";
-import cors from "cors";
 import permissionsPolicy from "permissions-policy";
 import useragent from "express-useragent";
-import {IpFilter} from "express-ipfilter";
 
 // helpers/utilities
 import got from "got";
@@ -76,7 +74,7 @@ app.use(
     express.static(resolve("public"), {
         index: false,
         maxAge: "30 days",
-        setHeaders: (res) => res.set("x-timestamp", Date.now()),
+        setHeaders: (res) => res.set("X-Timestamp", Date.now()),
     }),
     minifyHTML({
         override: true,
@@ -152,14 +150,14 @@ function getURL(req, canonical = false) {
 function setNoCache(res) {
     const date = new Date();
     date.setFullYear(date.getFullYear() - 1);
-    res.set("expires", date.toUTCString());
-    res.set("pragma", "no-cache");
-    res.set("cache-control", "public, no-cache");
+    res.set("Expires", date.toUTCString());
+    res.set("Pragma", "no-cache");
+    res.set("Cache-Control", "public, no-cache");
 }
 
 async function renderPage(req, res, template) {
-    res.set("content-type", "text/html");
-    res.set("cache-control", "public, max-age=2592000"); // 30 days
+    res.set("Content-Type", "text/html");
+    res.set("Cache-Control", "public, max-age=2592000"); // 30 days
     return void res.render("index", {
         ...{
             nonce: res.locals.nonce,
@@ -344,12 +342,19 @@ app.get("/", async (req, res) => {
     await renderPage(req, res, template);
 });
 
-app.get("/api/:api", IpFilter(IPS_BLACKLIST, {mode: "deny"}), cors(), async (req, res) => {
+app.get("/api/:api", async (req, res, next) => {
+    if (IPS_BLACKLIST.includes(req.ip)) {
+        return next();
+    }
     if (req.params) {
         const {is_api, data} = await queueNotAPI(req, res);
         if (is_api) {
             ping.pause();
-            res.set("content-type", "application/json");
+            res.set("Access-Control-Allow-Methods", "GET, POST");
+            res.set("Access-Control-Allow-Headers", "content-type");
+            res.set("Access-Control-Allow-Origin", "*");
+            res.set("Access-Control-Allow-Credentials", "true");
+            res.set("Content-Type", "application/json");
             setNoCache(res);
             res.status(200);
             await notify(res, data);
