@@ -226,7 +226,12 @@ async function NotAPI(req, res) {
             is_api = true;
             try {
                 const headers = {Authorization: `Bearer ${process.env.SPAMWATCH_API}`};
-                const ban = await got("https://api.spamwat.ch/banlist/" + id, {headers}).json();
+                const ban = await got("https://api.spamwat.ch/banlist/" + id, {
+                    headers,
+                    retry: {
+                        limit: 2,
+                    },
+                }).json();
                 ban.date = new Date(ban.date * 1000);
                 data["error"] = "";
                 data = {...data, ...ban};
