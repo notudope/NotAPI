@@ -73,8 +73,8 @@ app.set("views", resolve("views"));
 app.use(
     express.static(resolve("public"), {
         index: false,
+        etag: false,
         maxAge: "30 days",
-        setHeaders: (res) => res.set("X-Timestamp", Date.now()),
     }),
     /*
     minifyHTML({
@@ -321,7 +321,7 @@ async function notify(res, data) {
     }
 }
 
-const ping = new Cron("0 0 * * * *", {maxRuns: Infinity, paused: true}, async () => {
+const ping = new Cron("0 0 */6 * * *", {maxRuns: Infinity, paused: true}, async () => {
     try {
         await got(WEBHOOK_SERVER, {
             retry: {
@@ -330,7 +330,7 @@ const ping = new Cron("0 0 * * * *", {maxRuns: Infinity, paused: true}, async ()
             timeout: {
                 request: 3000,
             },
-        }); // 1 hours
+        }); // 6 hours
     } catch (_) {}
 });
 
@@ -389,8 +389,8 @@ app.all("*", async (req, res) => {
 });
 
 if (!IS_PROD) {
-    const PORT = process.env.PORT || 8080;
-    app.listen(PORT, async () => void console.log(`🚀 Server listening on http://127.0.0.1:${PORT}`));
+    const PORT = process.env.PORT || 3000;
+    app.listen(PORT, async () => console.log(`🚀 Server listening on http://127.0.0.1:${PORT}`));
 }
 
 (async () => {
