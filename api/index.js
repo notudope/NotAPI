@@ -347,7 +347,7 @@ tl.command("ping", async (ctx) => {
     );
 });
 tl.on("message", (ctx, next) => {
-    if (ctx.update.chat.type !== "private") {
+    if (ctx.update.message.chat.type !== "private") {
         return next();
     }
     const SKIP = ["/ping"];
