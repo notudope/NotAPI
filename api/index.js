@@ -12,7 +12,8 @@ import permissionsPolicy from "permissions-policy";
 import useragent from "express-useragent";
 
 // helpers/utilities
-import got from "got";
+import fetch from "node-fetch";
+import {Telegraf} from "telegraf";
 import pify from "pify";
 import delay from "delay";
 import PQueue from "p-queue";
@@ -26,23 +27,15 @@ import {Client as Genius} from "genius-lyrics";
 const genius = new Genius(process.env.GENIUS_API);
 
 // Environment
-const {NODE_ENV, BOT_TOKEN, WEBHOOK_SERVER, BOTLOG_CHATID, IP_BLACKLIST, UA_BLACKLIST} = process.env;
+let {NODE_ENV, BOT_TOKEN, WEBHOOK_SERVER, WEBHOOK_SECRET_PATH, BOTLOG_CHATID, IP_BLACKLIST, UA_BLACKLIST} = process.env;
 const IS_PROD = Boolean(NODE_ENV) && NODE_ENV == "production";
 const IPS_BLACKLIST = (Boolean(IP_BLACKLIST) && IP_BLACKLIST.split(" ").filter(Boolean)) || [];
 const UAS_BLACKLIST = (Boolean(UA_BLACKLIST) && UA_BLACKLIST.split(" ").filter(Boolean)) || [];
 
 // Telegram Bot API
-const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
-const WEBHOOK_URL = `${WEBHOOK_SERVER.replace(/\/+$/, "")}/webhook/${BOT_TOKEN}`;
-const telegram = got.extend({
-    prefixUrl: TELEGRAM_API,
-    retry: {
-        limit: 0,
-    },
-    timeout: {
-        request: 6000,
-    },
-});
+const StartTime = Date.now();
+const tl = new Telegraf(BOT_TOKEN);
+const tl_secret = `/${WEBHOOK_SECRET_PATH}/${tl.secretPathComponent()}`;
 
 // REST API rate limiter
 const queue = new PQueue({concurrency: 3});
@@ -224,13 +217,9 @@ async function NotAPI(req, res) {
         if (id) {
             is_api = true;
             try {
+                const url = `https://api.spamwat.ch/banlist/${id}`;
                 const headers = {Authorization: `Bearer ${process.env.SPAMWATCH_API}`};
-                const ban = await got(`https://api.spamwat.ch/banlist/${id}`, {
-                    headers,
-                    retry: {
-                        limit: 2,
-                    },
-                }).json();
+                const ban = await fetch(url, {headers}).then((x) => x.json());
                 ban.date = new Date(ban.date * 1000);
                 data["error"] = "";
                 data = {...data, ...ban};
@@ -264,67 +253,27 @@ async function queueNotAPI(req, res) {
     return queue.add(() => NotAPI(req, res));
 }
 
+const ping = new Cron("0 0 */6 * * *", {maxRuns: Infinity, paused: true}, async () => {
+    try {
+        await fetch(WEBHOOK_SERVER, {timeout: 3000}); // 6 hours
+    } catch (_) {}
+});
+
 async function webhookInit() {
     if (IS_PROD) {
         try {
-            await telegram(`deleteWebhook?url=${WEBHOOK_URL}`);
+            await tl.telegram.deleteWebhook();
         } catch (_) {}
         try {
-            await telegram(`getUpdates?offset=-1`);
-        } catch (_) {}
-        try {
-            await telegram(`setWebhook?url=${WEBHOOK_URL}`);
+            await tl.telegram.setWebhook(`${WEBHOOK_SERVER.replace(/\/+$/, "")}${tl_secret}`);
         } catch (_) {}
     } else {
-        const {result} = await telegram(`getMe`).json();
-        console.log(result);
+        const me = await tl.telegram.getMe();
+        console.log(me);
     }
 }
 
-async function sendMessage(text) {
-    return await telegram.post("sendMessage", {
-        json: {
-            chat_id: BOTLOG_CHATID,
-            text: text,
-            parse_mode: "html",
-            disable_web_page_preview: true,
-            disable_notification: false,
-            reply_markup: {
-                inline_keyboard: [
-                    [
-                        {
-                            text: "Vercel Deployment",
-                            url: "https://vercel.com/notudope/notapi",
-                        },
-                    ],
-                ],
-            },
-        },
-    });
-}
-
-async function sendFile(document, headers) {
-    return await telegram.post("sendDocument", {
-        headers,
-        json: {
-            chat_id: BOTLOG_CHATID,
-            document,
-            disable_notification: false,
-            reply_markup: {
-                inline_keyboard: [
-                    [
-                        {
-                            text: "Vercel Deployment",
-                            url: "https://vercel.com/notudope/notapi",
-                        },
-                    ],
-                ],
-            },
-        },
-    });
-}
-
-async function notify(res, data) {
+async function notify(res, api, data) {
     let user = "";
     let result = JSON.stringify(data, null, 2);
     for (const [key, val] of Object.entries(res.locals.u)) {
@@ -332,39 +281,87 @@ async function notify(res, data) {
     }
     try {
         if (result.length < 4096) {
-            await sendMessage(`<pre>${result}</pre>\n\n${user}`);
+            await tl.telegram.sendMessage(BOTLOG_CHATID, `<pre>${result}</pre>\n\n${user}`, {parse_mode: "html"});
         } else {
             const plain = user.replace(new RegExp("<[^>]*>", "g"), "");
-            const filename = +res.locals.u["ip"].split("").filter(parseInt).join("") + ".txt";
+            const filename = `${api}_${+res.locals.u["ip"].split("").filter(parseInt).join("")}.txt`;
             const data = `${result}\n\n${plain}`;
-            const file = Buffer.from(data);
+            const source = Buffer.from(data);
             const headers = {
                 filename,
-                "Content-Length": data.length,
-                "Content-Type": "text/plain",
+                source,
             };
-            await sendFile(file, headers);
+            await tl.telegram.sendDocument(BOTLOG_CHATID, headers);
         }
     } catch (_) {
-        console.error(_);
         try {
-            await sendMessage(`<pre>${_}</pre>\n\n${user}`);
+            await tl.telegram.sendMessage(BOTLOG_CHATID, `<pre>${_}</pre>\n\n${user}`, {parse_mode: "html"});
         } catch (__) {}
     }
 }
 
-const ping = new Cron("0 0 */6 * * *", {maxRuns: Infinity, paused: true}, async () => {
-    try {
-        await got(WEBHOOK_SERVER, {
-            retry: {
-                limit: 0,
-            },
-            timeout: {
-                request: 3000,
-            },
-        }); // 6 hours
-    } catch (_) {}
+function getUptime(uptime) {
+    let totals = uptime / 1000;
+    const days = Math.floor(totals / 86400);
+    totals %= 86400;
+    const hours = Math.floor(totals / 3600);
+    totals %= 3600;
+    const minutes = Math.floor(totals / 60);
+    const seconds = Math.floor(totals % 60);
+    return `${days}d:${hours}h:${minutes}m:${seconds}s`;
+}
+
+function checkTime(ctx, next) {
+    switch (ctx.updateType) {
+        case "message":
+            if (new Date().getTime() / 1000 - ctx.message.date < 5 * 60) {
+                next();
+            }
+            break;
+        case "callback_query":
+            if (ctx.callbackQuery.message && new Date().getTime() / 1000 - ctx.callbackQuery.message.date < 5 * 60) {
+                next();
+            }
+            break;
+        case "inline_query":
+            return next();
+        default:
+            next();
+            break;
+    }
+}
+
+tl.use(checkTime);
+tl.command("ping", async (ctx) => {
+    const start = performance.now();
+    const chat_id = ctx.message.chat.id;
+    const msg_id = ctx.message.message_id;
+    const reply = await ctx.telegram.sendMessage(chat_id, "Ping !", {reply_to_message_id: msg_id});
+    const end = performance.now();
+    const ms = Number((end - start) / 1000).toFixed(2);
+    const up = getUptime(Date.now() - StartTime);
+    await ctx.telegram.editMessageText(
+        reply.chat.id,
+        reply.message_id,
+        undefined,
+        `🏓 Pong !!\n<b>Speed</b> - <code>${ms}ms</code>\n<b>Uptime</b> - <code>${up}</code>`,
+        {parse_mode: "html"},
+    );
 });
+tl.on("message", (ctx) => {
+    const SKIP = ["/ping"];
+    if (ctx.update.message.text && SKIP.some((x) => ctx.update.message.text.toLowerCase().includes(x))) {
+        return;
+    }
+    const chat_id = ctx.message.chat.id;
+    const msg_id = ctx.message.message_id;
+    const raw = JSON.stringify(ctx.message, null, 2);
+    ctx.telegram.sendMessage(chat_id, `<pre>${raw}</pre>`, {
+        parse_mode: "html",
+        reply_to_message_id: ctx.message.message_id,
+    });
+});
+app.use(tl.webhookCallback(tl_secret));
 
 app.get("/", async (req, res) => {
     const template = {
@@ -387,7 +384,7 @@ app.get("/api/:api", async (req, res, next) => {
     if (IPS_BLACKLIST.includes(req.ip)) {
         return next();
     }
-    if (req.params) {
+    if (req.params.api) {
         const {is_api, data} = await queueNotAPI(req, res);
         if (is_api) {
             ping.pause();
@@ -398,7 +395,7 @@ app.get("/api/:api", async (req, res, next) => {
             res.set("Content-Type", "application/json");
             setNoCache(res);
             res.status(200);
-            await notify(res, data);
+            await notify(res, req.params.api, data);
             ping.resume();
             return res.json({...data});
         }
