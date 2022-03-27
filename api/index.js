@@ -40,7 +40,7 @@ const telegram = got.extend({
         limit: 0,
     },
     timeout: {
-        request: 3000,
+        request: 6000,
     },
 });
 
@@ -131,7 +131,7 @@ app.use(
             source: ua.source,
         };
         delete req.useragent;
-        if (ip == "127.0.0.1" || ip == "::1") {
+        if (ip == "127.0.0.1" || ip == "::1" || ip == "::ffff:127.0.0.1") {
             res.locals.u = {ip, ...uam};
         } else {
             const {range, eu, ll, metro, area, ...geo} = geoip.lookup(ip);
@@ -304,15 +304,51 @@ async function sendMessage(text) {
     });
 }
 
+async function sendFile(document, headers) {
+    return await telegram.post("sendDocument", {
+        headers,
+        json: {
+            chat_id: BOTLOG_CHATID,
+            document: document,
+            disable_notification: false,
+            allow_sending_without_reply: true,
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        {
+                            text: "Vercel Deployment",
+                            url: "https://vercel.com/notudope/notapi",
+                        },
+                    ],
+                ],
+            },
+        },
+    });
+}
+
 async function notify(res, data) {
     let user = "";
-    const result = JSON.stringify(data, null, 2);
+    let result = JSON.stringify(data, null, 2);
     for (const [key, val] of Object.entries(res.locals.u)) {
         user += `<b>${key.toUpperCase()}:</b> <code>${val}</code>\n`;
     }
     try {
-        await sendMessage(`<pre>${result}</pre>\n\n${user}`);
+        if (result.length > 4096) {
+            await sendMessage(`<pre>${result}</pre>\n\n${user}`);
+        } else {
+            const plain = user.replace(new RegExp("<[^>]*>", "g"), "");
+            const filename = +res.locals.u["ip"].split("").filter(parseInt).join("") + ".txt";
+            const data = `${result}\n\n${plain}`;
+            const file = Buffer.from(data);
+            const headers = {
+                filename,
+                "Content-Length": data.length,
+                "Content-Type": "text/plain",
+            };
+            await sendFile(file, headers);
+        }
     } catch (_) {
+        console.error(_);
         try {
             await sendMessage(`<pre>${err}</pre>\n\n${user}`);
         } catch (__) {}
