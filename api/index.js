@@ -1,6 +1,7 @@
 import "dotenv/config";
 import {resolve} from "path";
 import {randomBytes} from "crypto";
+import {performance} from "perf_hooks";
 
 // express
 import express from "express";
