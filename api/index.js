@@ -350,6 +350,9 @@ tl.command("ping", async (ctx) => {
     );
 });
 tl.on("message", (ctx) => {
+    if (ctx.update.chat.type != "private") {
+        return;
+    }
     const SKIP = ["/ping"];
     if (ctx.update.message.text && SKIP.some((x) => ctx.update.message.text.toLowerCase().includes(x))) {
         return;
