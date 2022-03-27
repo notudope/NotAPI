@@ -262,7 +262,9 @@ const ping = new Cron("0 0 */6 * * *", {maxRuns: Infinity, paused: true}, async 
 
 async function webhookInit() {
     if (IS_PROD) {
-        // await tl.telegram.deleteWebhook();
+        try {
+            await tl.telegram.deleteWebhook();
+        } catch (_) {}
         try {
             await tl.telegram.setWebhook(`${WEBHOOK_SERVER.replace(/\/+$/, "")}${tl_secret}`);
         } catch (_) {}
@@ -314,12 +316,12 @@ function checkTime(ctx, next) {
     switch (ctx.updateType) {
         case "message":
             if (new Date().getTime() / 1000 - ctx.message.date < 5 * 60) {
-                next();
+                return next();
             }
             break;
         case "callback_query":
             if (ctx.callbackQuery.message && new Date().getTime() / 1000 - ctx.callbackQuery.message.date < 5 * 60) {
-                next();
+                return next();
             }
             break;
         case "inline_query":
