@@ -324,11 +324,8 @@ function checkTime(ctx, next) {
                 return next();
             }
             break;
-        case "inline_query":
-            return next();
         default:
-            next();
-            break;
+            return next();
     }
 }
 
@@ -350,12 +347,12 @@ tl.command("ping", async (ctx) => {
     );
 });
 tl.on("message", (ctx, next) => {
-    if (ctx.update.chat.type != "private") {
-        next();
+    if (ctx.update.chat.type !== "private") {
+        return next();
     }
     const SKIP = ["/ping"];
     if (ctx.update.message.text && SKIP.some((x) => ctx.update.message.text.toLowerCase().includes(x))) {
-        next();
+        return next();
     }
     const chat_id = ctx.message.chat.id;
     const msg_id = ctx.message.message_id;
@@ -365,7 +362,10 @@ tl.on("message", (ctx, next) => {
         reply_to_message_id: ctx.message.message_id,
     });
 });
-app.use(tl.webhookCallback(tl_secret));
+app.use(tl.webhookCallback(tl_secret), (err, req, res) => {
+    console.error(err.stack);
+    return;
+});
 
 app.get("/", async (req, res) => {
     const template = {
