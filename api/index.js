@@ -142,10 +142,8 @@ app.use(
 );
 
 function getURL(req, canonical = false) {
-    const url = (canonical ? `https://${req.headers.host}${req.originalUrl}` : `https://${req.headers.host}`)
-        .replace("www.", "")
-        .toLowerCase();
-    return url.replace(/\/+$/, "").trim();
+    const url = canonical ? `https://${req.headers.host}${req.originalUrl}` : `https://${req.headers.host}`;
+    return url.replace(/\/+$/, "").toLowerCase().trim();
 }
 
 function setNoCache(res) {
