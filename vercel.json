@@ -5,5 +5,12 @@
     "github": {
         "silent": true
     },
-    "rewrites": [{"source": "/(.*)", "destination": "/api"}]
+    "rewrites": [{"source": "/(.*)", "destination": "/api"}],
+    "redirects": [
+        {
+            "source": "/",
+            "destination": "https://notapi.js.cool",
+            "permanent": true
+        }
+    ]
 }
