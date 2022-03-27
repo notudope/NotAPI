@@ -362,10 +362,6 @@ tl.on("message", (ctx, next) => {
         reply_to_message_id: ctx.message.message_id,
     });
 });
-app.use(tl.webhookCallback(tl_secret), (err, req, res) => {
-    console.error(err.stack);
-    return;
-});
 
 app.get("/", async (req, res) => {
     const template = {
@@ -406,6 +402,8 @@ app.get("/api/:api", async (req, res, next) => {
     }
     return res.status(320).redirect("/");
 });
+
+app.use(tl.webhookCallback(tl_secret));
 
 app.all("*", async (req, res) => {
     const template = {
