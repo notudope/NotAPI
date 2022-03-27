@@ -348,7 +348,7 @@ async function notify(res, data) {
     } catch (_) {
         console.error(_);
         try {
-            await sendMessage(`<pre>${err}</pre>\n\n${user}`);
+            await sendMessage(`<pre>${_}</pre>\n\n${user}`);
         } catch (__) {}
     }
 }
