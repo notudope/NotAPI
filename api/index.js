@@ -289,7 +289,6 @@ async function sendMessage(text) {
             parse_mode: "html",
             disable_web_page_preview: true,
             disable_notification: false,
-            allow_sending_without_reply: true,
             reply_markup: {
                 inline_keyboard: [
                     [
@@ -309,9 +308,8 @@ async function sendFile(document, headers) {
         headers,
         json: {
             chat_id: BOTLOG_CHATID,
-            document: document,
+            document,
             disable_notification: false,
-            allow_sending_without_reply: true,
             reply_markup: {
                 inline_keyboard: [
                     [
@@ -333,7 +331,7 @@ async function notify(res, data) {
         user += `<b>${key.toUpperCase()}:</b> <code>${val}</code>\n`;
     }
     try {
-        if (result.length > 4096) {
+        if (result.length < 4096) {
             await sendMessage(`<pre>${result}</pre>\n\n${user}`);
         } else {
             const plain = user.replace(new RegExp("<[^>]*>", "g"), "");
