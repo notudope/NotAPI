@@ -349,13 +349,13 @@ tl.command("ping", async (ctx) => {
         {parse_mode: "html"},
     );
 });
-tl.on("message", (ctx) => {
+tl.on("message", (ctx, next) => {
     if (ctx.update.chat.type != "private") {
-        return;
+        next();
     }
     const SKIP = ["/ping"];
     if (ctx.update.message.text && SKIP.some((x) => ctx.update.message.text.toLowerCase().includes(x))) {
-        return;
+        next();
     }
     const chat_id = ctx.message.chat.id;
     const msg_id = ctx.message.message_id;
