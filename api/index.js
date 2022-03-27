@@ -262,9 +262,7 @@ const ping = new Cron("0 0 */6 * * *", {maxRuns: Infinity, paused: true}, async 
 
 async function webhookInit() {
     if (IS_PROD) {
-        try {
-            await tl.telegram.deleteWebhook();
-        } catch (_) {}
+        // await tl.telegram.deleteWebhook();
         try {
             await tl.telegram.setWebhook(`${WEBHOOK_SERVER.replace(/\/+$/, "")}${tl_secret}`);
         } catch (_) {}
