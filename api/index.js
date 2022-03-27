@@ -132,10 +132,10 @@ app.use(
         };
         delete req.useragent;
         if (ip == "127.0.0.1" || ip == "::1") {
-            res.locals.info = {ip, ...uam};
+            res.locals.u = {ip, ...uam};
         } else {
-            //const {range, eu, ll, metro, area, ...geo} = geoip.lookup(ip);
-            res.locals.info = {ip, ...geoip.lookup(ip), ...uam};
+            const {range, eu, ll, metro, area, ...geo} = geoip.lookup(ip);
+            res.locals.u = {ip, ...geo, ...uam};
         }
         next();
     },
@@ -227,7 +227,7 @@ async function NotAPI(req, res) {
             is_api = true;
             try {
                 const headers = {Authorization: `Bearer ${process.env.SPAMWATCH_API}`};
-                const ban = await got("https://api.spamwat.ch/banlist/" + id, {
+                const ban = await got(`https://api.spamwat.ch/banlist/${id}`, {
                     headers,
                     retry: {
                         limit: 2,
@@ -269,16 +269,16 @@ async function queueNotAPI(req, res) {
 async function webhookInit() {
     if (IS_PROD) {
         try {
-            await telegram("deleteWebhook?url=" + WEBHOOK_URL);
+            await telegram(`deleteWebhook?url=${WEBHOOK_URL}`);
         } catch (_) {}
         try {
-            await telegram("getUpdates?offset=-1");
+            await telegram(`getUpdates?offset=-1`);
         } catch (_) {}
         try {
-            await telegram("setWebhook?url=" + WEBHOOK_URL);
+            await telegram(`setWebhook?url=${WEBHOOK_URL}`);
         } catch (_) {}
     } else {
-        const {result} = await telegram("getMe").json();
+        const {result} = await telegram(`getMe`).json();
         console.log(result);
     }
 }
@@ -291,6 +291,7 @@ async function sendMessage(text) {
             parse_mode: "html",
             disable_web_page_preview: true,
             disable_notification: false,
+            allow_sending_without_reply: true,
             reply_markup: {
                 inline_keyboard: [
                     [
@@ -306,17 +307,16 @@ async function sendMessage(text) {
 }
 
 async function notify(res, data) {
-    let info = "";
+    let user = "";
     const result = JSON.stringify(data, null, 2);
-    Object.entries(res.locals.info).forEach((x) => {
-        const [k, v] = x;
-        info += `<b>${k[0].toUpperCase()}${k.slice(1)}:</b> <code>${v}</code>\n`;
-    });
+    for (const [key, val] of Object.entries(res.locals.u)) {
+        user += `<b>${key.toUpperCase()}:</b> <code>${val}</code>\n`;
+    }
     try {
-        await sendMessage(`<pre>${result}</pre>\n\n${info}`);
+        await sendMessage(`<pre>${result}</pre>\n\n${user}`);
     } catch (_) {
         try {
-            await sendMessage(`<pre>${err}</pre>\n\n${info}`);
+            await sendMessage(`<pre>${err}</pre>\n\n${user}`);
         } catch (__) {}
     }
 }
@@ -349,7 +349,7 @@ app.get("/", async (req, res) => {
 });
 
 app.get("/api/:api", async (req, res, next) => {
-    if (UAS_BLACKLIST.some((x) => req.get("User-Agent").toLowerCase().includes(x))) {
+    if (UAS_BLACKLIST.some((x) => res.locals.u.source.toLowerCase().includes(x))) {
         return res.status(403).send("Bot not allowed.");
     }
     if (IPS_BLACKLIST.includes(req.ip)) {
@@ -382,7 +382,7 @@ app.all("*", async (req, res) => {
             robots: "noindex",
         },
         title: "404",
-        description: "Didn’t find anything here!",
+        description: "Didn't find anything here!",
     };
     res.status(404);
     await renderPage(req, res, template);
