@@ -6,8 +6,8 @@ import {performance} from "perf_hooks";
 // express
 import express from "express";
 import {configure, renderFile} from "eta";
-//import minifyHTML from "express-minify-html-terser";
-//import compression from "compression";
+import minifyHTML from "express-minify-html-terser";
+import compression from "compression";
 import helmet from "helmet";
 import permissionsPolicy from "permissions-policy";
 import useragent from "express-useragent";
@@ -70,7 +70,6 @@ app.use(
         etag: false,
         maxAge: "30 days",
     }),
-    /*
     minifyHTML({
         override: true,
         exception_url: false,
@@ -84,7 +83,7 @@ app.use(
             minifyCSS: true,
         },
     }),
-    compression(),*/
+    compression(),
     helmet({
         contentSecurityPolicy: {
             useDefaults: false,
@@ -395,7 +394,7 @@ app.get("/api/:api", async (req, res, next) => {
     if (req.params.api) {
         const {is_api, data} = await queueNotAPI(req, res);
         if (is_api) {
-            ping.pause();
+            // ping.pause();
             res.set("Access-Control-Allow-Methods", "GET, POST");
             res.set("Access-Control-Allow-Headers", "content-type");
             res.set("Access-Control-Allow-Origin", "*");
@@ -404,7 +403,7 @@ app.get("/api/:api", async (req, res, next) => {
             setNoCache(res);
             res.status(200);
             await notify(res, req.params.api, data);
-            ping.resume();
+            // ping.resume();
             return res.json({...data});
         }
     }
