@@ -28,11 +28,10 @@ import {Client as Genius} from "genius-lyrics";
 const genius = new Genius(process.env.GENIUS_API);
 
 // Environment
-let {NODE_ENV, DEV_MODE, BOT_TOKEN, WEBHOOK_SERVER, WEBHOOK_SECRET_PATH, BOTLOG_CHATID, IP_BLACKLIST, UA_BLACKLIST} =
-    process.env;
-const IS_PROD = Boolean(NODE_ENV) && NODE_ENV == "production";
-const IPS_BLACKLIST = (Boolean(IP_BLACKLIST) && IP_BLACKLIST.split(" ").filter(Boolean)) || [];
-const UAS_BLACKLIST = (Boolean(UA_BLACKLIST) && UA_BLACKLIST.split(" ").filter(Boolean)) || [];
+let {DEV_MODE, BOT_TOKEN, WEBHOOK_SERVER, WEBHOOK_SECRET_PATH, BOTLOG_CHATID} = process.env;
+const IS_PROD = Boolean(process.env.NODE_ENV) && process.env.NODE_ENV == "production";
+const IPS_BLACKLIST = (Boolean(process.env.IP_BLACKLIST) && process.env.IP_BLACKLIST.split(" ").filter(Boolean)) || [];
+const UAS_BLACKLIST = (Boolean(process.env.UA_BLACKLIST) && process.env.UA_BLACKLIST.split(" ").filter(Boolean)) || [];
 
 // Telegram Bot API
 let StartTime;
