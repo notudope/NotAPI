@@ -269,10 +269,10 @@ async function webhookInit() {
             await tl.telegram.deleteWebhook();
         } catch (_) {}
         try {
-            await tl.telegram.getUpdates(0, 100, -1);
-        } catch (_) {}
-        try {
-            await tl.telegram.setWebhook(`${WEBHOOK_SERVER.replace(/\/+$/, "")}${tl_secret}`);
+            tl.telegram
+                .getUpdates(0, 100, -1)
+                .then((up) => (up.length > 0 ? tl.telegram.getUpdates(0, 100, up[up.length - 1].update_id) : []))
+                .then(() => tl.telegram.setWebhook(`${WEBHOOK_SERVER.replace(/\/+$/, "")}${tl_secret}`));
         } catch (_) {}
     }
     if (!IS_PROD) {
