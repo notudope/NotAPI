@@ -28,13 +28,14 @@ import {Client as Genius} from "genius-lyrics";
 const genius = new Genius(process.env.GENIUS_API);
 
 // Environment
-let {NODE_ENV, BOT_TOKEN, WEBHOOK_SERVER, WEBHOOK_SECRET_PATH, BOTLOG_CHATID, IP_BLACKLIST, UA_BLACKLIST} = process.env;
+let {NODE_ENV, DEV_MODE, BOT_TOKEN, WEBHOOK_SERVER, WEBHOOK_SECRET_PATH, BOTLOG_CHATID, IP_BLACKLIST, UA_BLACKLIST} =
+    process.env;
 const IS_PROD = Boolean(NODE_ENV) && NODE_ENV == "production";
 const IPS_BLACKLIST = (Boolean(IP_BLACKLIST) && IP_BLACKLIST.split(" ").filter(Boolean)) || [];
 const UAS_BLACKLIST = (Boolean(UA_BLACKLIST) && UA_BLACKLIST.split(" ").filter(Boolean)) || [];
 
 // Telegram Bot API
-const StartTime = Date.now();
+let StartTime;
 const tl = new Telegraf(BOT_TOKEN);
 const tl_secret = `/${WEBHOOK_SECRET_PATH}/${tl.secretPathComponent()}`;
 
@@ -261,14 +262,15 @@ const ping = new Cron("0 0 */6 * * *", {maxRuns: Infinity, paused: true}, async 
 });
 
 async function webhookInit() {
-    if (IS_PROD) {
+    if (IS_PROD || DEV_MODE) {
         try {
             await tl.telegram.deleteWebhook();
         } catch (_) {}
         try {
             await tl.telegram.setWebhook(`${WEBHOOK_SERVER.replace(/\/+$/, "")}${tl_secret}`);
         } catch (_) {}
-    } else {
+    }
+    if (!IS_PROD) {
         const me = await tl.telegram.getMe();
         console.log(me);
     }
@@ -282,7 +284,10 @@ async function notify(res, api, data) {
     }
     try {
         if (result.length < 4096) {
-            await tl.telegram.sendMessage(BOTLOG_CHATID, `<pre>${result}</pre>\n\n${user}`, {parse_mode: "html"});
+            await tl.telegram.sendMessage(BOTLOG_CHATID, `<pre>${result}</pre>\n\n${user}`, {
+                parse_mode: "html",
+                disable_web_page_preview: true,
+            });
         } else {
             const plain = user.replace(new RegExp("<[^>]*>", "g"), "");
             const filename = `${api}_${+res.locals.u["ip"].split("").filter(parseInt).join("")}.txt`;
@@ -296,7 +301,10 @@ async function notify(res, api, data) {
         }
     } catch (_) {
         try {
-            await tl.telegram.sendMessage(BOTLOG_CHATID, `<pre>${_}</pre>\n\n${user}`, {parse_mode: "html"});
+            await tl.telegram.sendMessage(BOTLOG_CHATID, `<pre>${_}</pre>\n\n${user}`, {
+                parse_mode: "html",
+                disable_web_page_preview: true,
+            });
         } catch (__) {}
     }
 }
@@ -312,7 +320,7 @@ function getUptime(uptime) {
     return `${days}d:${hours}h:${minutes}m:${seconds}s`;
 }
 
-function checkTime(ctx, next) {
+tl.use((ctx, next) => {
     switch (ctx.updateType) {
         case "message":
             if (new Date().getTime() / 1000 - ctx.message.date < 5 * 60) {
@@ -327,14 +335,15 @@ function checkTime(ctx, next) {
         default:
             return next();
     }
-}
-
-tl.use(checkTime);
+});
 tl.command("ping", async (ctx) => {
+    if (ctx.chat.type !== "private" || ctx.from.is_bot) {
+        return;
+    }
     const start = performance.now();
-    const chat_id = ctx.message.chat.id;
+    const chat_id = ctx.chat.id;
     const msg_id = ctx.message.message_id;
-    const reply = await ctx.telegram.sendMessage(chat_id, "Ping !", {reply_to_message_id: msg_id});
+    const reply = await ctx.reply("Ping !", {reply_to_message_id: msg_id, disable_web_page_preview: true});
     const end = performance.now();
     const ms = Number((end - start) / 1000).toFixed(2);
     const up = getUptime(Date.now() - StartTime);
@@ -343,23 +352,23 @@ tl.command("ping", async (ctx) => {
         reply.message_id,
         undefined,
         `🏓 Pong !!\n<b>Speed</b> - <code>${ms}ms</code>\n<b>Uptime</b> - <code>${up}</code>`,
-        {parse_mode: "html"},
+        {parse_mode: "html", disable_web_page_preview: true},
     );
 });
-tl.on("message", (ctx, next) => {
-    if (ctx.update.message.chat.type !== "private") {
-        return next();
+tl.on("message", (ctx) => {
+    if (ctx.chat.type !== "private" || ctx.from.is_bot) {
+        return;
     }
     const SKIP = ["/ping"];
-    if (ctx.update.message.text && SKIP.some((x) => ctx.update.message.text.toLowerCase().includes(x))) {
-        return next();
+    if (ctx.message.text && SKIP.some((x) => ctx.message.text.toLowerCase().includes(x))) {
+        return;
     }
-    const chat_id = ctx.message.chat.id;
+    const chat_id = ctx.chat.id;
     const msg_id = ctx.message.message_id;
     const raw = JSON.stringify(ctx.message, null, 2);
-    ctx.telegram.sendMessage(chat_id, `<pre>${raw}</pre>`, {
-        parse_mode: "html",
-        reply_to_message_id: ctx.message.message_id,
+    ctx.replyWithHTML(`<pre>${raw}</pre>`, {
+        reply_to_message_id: msg_id,
+        disable_web_page_preview: true,
     });
 });
 
@@ -429,6 +438,7 @@ if (!IS_PROD) {
     if (IS_PROD) {
         ping.resume();
     }
+    StartTime = Date.now();
 })();
 
 export default app;
