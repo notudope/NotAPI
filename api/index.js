@@ -354,7 +354,7 @@ tl.command("ping", async (ctx) => {
         {parse_mode: "html", disable_web_page_preview: true},
     );
 });
-tl.on("message", (ctx) => {
+tl.on("message", async (ctx) => {
     if (ctx.chat.type !== "private" || ctx.from.is_bot) {
         return;
     }
@@ -365,7 +365,7 @@ tl.on("message", (ctx) => {
     const chat_id = ctx.chat.id;
     const msg_id = ctx.message.message_id;
     const raw = JSON.stringify(ctx.message, null, 2);
-    ctx.replyWithHTML(`<pre>${raw}</pre>`, {
+    await ctx.replyWithHTML(`<pre>${raw}</pre>`, {
         reply_to_message_id: msg_id,
         disable_web_page_preview: true,
     });
