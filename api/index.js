@@ -135,8 +135,12 @@ app.use(
 );
 
 function getURL(req, canonical = false) {
-    const url = canonical ? `https://${req.headers.host}${req.originalUrl}` : `https://${req.headers.host}`;
-    return url.replace(/\/+$/, "").toLowerCase().trim();
+    const url = (canonical ? `${req.headers.host}${req.originalUrl}` : `${req.headers.host}`)
+        .split("/")
+        .filter(Boolean)
+        .join("/")
+        .trim();
+    return "https://" + url;
 }
 
 function setNoCache(res) {
@@ -263,6 +267,9 @@ async function webhookInit() {
     if (IS_PROD || DEV_MODE) {
         try {
             await tl.telegram.deleteWebhook();
+        } catch (_) {}
+        try {
+            await tl.telegram.getUpdates(0, 100, -1);
         } catch (_) {}
         try {
             await tl.telegram.setWebhook(`${WEBHOOK_SERVER.replace(/\/+$/, "")}${tl_secret}`);
