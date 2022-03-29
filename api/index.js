@@ -130,6 +130,7 @@ async function renderPage(req, res, template) {
                 cache: IS_PROD,
                 tags: ["{{", "}}"],
                 varName: "it",
+                views: resolve("views"),
                 plugins: [
                     {
                         processTemplate: (html) => {
