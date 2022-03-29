@@ -1,20 +1,23 @@
-import "dotenv/config";
-import {resolve} from "path";
-import {randomBytes} from "crypto";
-import {performance} from "perf_hooks";
-
-// express
-import express from "express";
-import {configure, renderFile} from "eta";
-import minifyHTML from "express-minify-html-terser";
+import * as dotenv from "@tinyhttp/dotenv";
+dotenv.config();
+import {App} from "@tinyhttp/app";
+import * as bodyParser from "milliparsec";
+import {logger} from "@tinyhttp/logger";
+import sirv from "sirv";
+import * as eta from "eta";
+import {minify} from "html-minifier-terser";
 import compression from "compression";
 import helmet from "helmet";
 import permissionsPolicy from "permissions-policy";
 import useragent from "express-useragent";
 
 // helpers/utilities
-import fetch from "node-fetch";
-import {Telegraf} from "telegraf";
+import {resolve} from "path";
+import {randomBytes} from "crypto";
+import {performance} from "perf_hooks";
+import {Agent} from "https";
+import got from "got";
+import FormData from "form-data";
 import pify from "pify";
 import delay from "delay";
 import PQueue from "p-queue";
@@ -28,15 +31,31 @@ import {Client as Genius} from "genius-lyrics";
 const genius = new Genius(process.env.GENIUS_API);
 
 // Environment
-let {DEV_MODE, BOT_TOKEN, WEBHOOK_SERVER, WEBHOOK_SECRET_PATH, BOTLOG_CHATID} = process.env;
+let {DEV_MODE, BOT_TOKEN, WEBHOOK_SERVER, BOTLOG_CHATID} = process.env;
 const IS_PROD = Boolean(process.env.NODE_ENV) && process.env.NODE_ENV == "production";
 const IPS_BLACKLIST = (Boolean(process.env.IP_BLACKLIST) && process.env.IP_BLACKLIST.split(" ").filter(Boolean)) || [];
 const UAS_BLACKLIST = (Boolean(process.env.UA_BLACKLIST) && process.env.UA_BLACKLIST.split(" ").filter(Boolean)) || [];
 
 // Telegram Bot API
 let StartTime;
-const tl = new Telegraf(BOT_TOKEN);
-const tl_secret = `/${WEBHOOK_SECRET_PATH}/${tl.secretPathComponent()}`;
+const telegram = `https://api.telegram.org/bot${BOT_TOKEN}`;
+const webhook_url = `${WEBHOOK_SERVER.replace(/\/+$/, "")}/webhook/${BOT_TOKEN}`;
+
+// got instances
+const fetch = got.extend({
+    agent: {
+        https: new Agent({
+            keepAlive: true,
+            keepAliveMsecs: 10000,
+        }),
+    },
+    headers: {"user-agent": undefined, "content-type": "application/json", connection: "keep-alive"},
+    responseType: "json",
+    resolveBodyOnly: true,
+    decompress: true,
+    retry: 1, // {limit: 1},
+    timeout: 10000, // {request: 10000},
+});
 
 // REST API rate limiter
 const queue = new PQueue({concurrency: 3});
@@ -44,95 +63,32 @@ const queue = new PQueue({concurrency: 3});
 // Global nonce
 const ranuid = randomBytes(9).toString("hex");
 
-const app = express();
-//const router = express.Router();
-app.set("trust proxy", true);
-app.use(express.urlencoded({extended: true}));
-app.use(express.json());
-app.use((req, res, next) => {
+const app = new App();
+if (!IS_PROD || DEV_MODE) {
+    app.use(logger());
+}
+app.use(useragent.express(), async (req, res, next) => {
+    const ip = req.ip || (req.headers["x-forwarded-for"] || "").replace(/:\d+$/, "") || req.connection.remoteAddress;
+    const ua = req.useragent;
+    const uam = {
+        browser: ua.browser,
+        version: ua.version,
+        os: ua.os,
+        platform: ua.platform,
+        source: ua.source,
+    };
+    delete req.useragent;
+    if (ip == "127.0.0.1" || ip == "::1" || ip == "::ffff:127.0.0.1") {
+        res.locals.u = {ip, ...uam};
+    } else {
+        const {range, eu, ll, metro, area, ...geo} = geoip.lookup(ip);
+        res.locals.u = {ip, ...geo, ...uam};
+    }
     res.locals.nonce = ranuid;
     res.locals.baseURL = getURL(req, false);
     res.locals.canonicalURL = getURL(req, true);
     next();
 });
-configure({
-    async: true,
-    cache: IS_PROD,
-    tags: ["{{", "}}"],
-    varName: "it",
-});
-app.engine("html", renderFile);
-app.set("view engine", "html");
-app.set("views", resolve("views"));
-app.use(
-    express.static(resolve("public"), {
-        index: false,
-        etag: false,
-        maxAge: "30 days",
-    }),
-    minifyHTML({
-        override: true,
-        exception_url: false,
-        htmlMinifier: {
-            removeComments: true,
-            collapseWhitespace: true,
-            collapseBooleanAttributes: true,
-            removeAttributeQuotes: false,
-            removeEmptyAttributes: true,
-            minifyJS: true,
-            minifyCSS: true,
-        },
-    }),
-    compression(),
-    helmet({
-        contentSecurityPolicy: {
-            useDefaults: false,
-            directives: {
-                defaultSrc: ["'self'"],
-                scriptSrc: ["'self'", (req, res) => `'nonce-${res.locals.nonce}'`, "cdn.jsdelivr.net"],
-                imgSrc: ["'self'"],
-                styleSrc: ["'self'", (req, res) => `'nonce-${res.locals.nonce}'`],
-                fontSrc: ["'self'"],
-                objectSrc: ["'none'"],
-                upgradeInsecureRequests: [],
-            },
-        },
-        dnsPrefetchControl: {allow: true},
-    }),
-    permissionsPolicy({
-        features: {
-            accelerometer: [],
-            camera: [],
-            geolocation: [],
-            gyroscope: [],
-            magnetometer: [],
-            microphone: [],
-            payment: [],
-            usb: [],
-            interestCohort: [],
-        },
-    }),
-    useragent.express(),
-    (req, res, next) => {
-        const ip = req.ip;
-        const ua = req.useragent;
-        const uam = {
-            browser: ua.browser,
-            version: ua.version,
-            os: ua.os,
-            platform: ua.platform,
-            source: ua.source,
-        };
-        delete req.useragent;
-        if (ip == "127.0.0.1" || ip == "::1" || ip == "::ffff:127.0.0.1") {
-            res.locals.u = {ip, ...uam};
-        } else {
-            const {range, eu, ll, metro, area, ...geo} = geoip.lookup(ip);
-            res.locals.u = {ip, ...geo, ...uam};
-        }
-        next();
-    },
-);
 
 function getURL(req, canonical = false) {
     const url = (canonical ? `${req.headers.host}${req.originalUrl}` : `${req.headers.host}`)
@@ -146,22 +102,55 @@ function getURL(req, canonical = false) {
 function setNoCache(res) {
     const date = new Date();
     date.setFullYear(date.getFullYear() - 1);
-    res.set("Expires", date.toUTCString());
-    res.set("Pragma", "no-cache");
-    res.set("Cache-Control", "public, no-cache");
+    res.set({
+        Expires: date.toUTCString(),
+        Pragma: "no-cache",
+        "Cache-Control": "public, no-cache",
+    });
 }
 
 async function renderPage(req, res, template) {
-    res.set("Content-Type", "text/html");
-    res.set("Cache-Control", "public, max-age=2592000"); // 30 days
-    return void res.render("index", {
-        ...{
-            nonce: res.locals.nonce,
-            baseURL: res.locals.baseURL,
-            canonicalURL: res.locals.canonicalURL,
-        },
-        ...template,
+    res.set({
+        "Content-Type": "text/html",
+        "Cache-Control": "public, max-age=2592000", // 30 days
     });
+    return void res.render(
+        "index.html",
+        {
+            ...{
+                nonce: res.locals.nonce,
+                baseURL: res.locals.baseURL,
+                canonicalURL: res.locals.canonicalURL,
+            },
+            ...template,
+        },
+        {
+            renderOptions: {
+                async: true,
+                cache: IS_PROD,
+                tags: ["{{", "}}"],
+                varName: "it",
+                plugins: [
+                    {
+                        processTemplate: (html) => {
+                            const minified = minify(html, {
+                                minifyCSS: true,
+                                minifyJS: true,
+                                removeComments: true,
+                                collapseWhitespace: true,
+                                collapseBooleanAttributes: true,
+                                removeAttributeQuotes: true,
+                                removeEmptyAttributes: true,
+                                continueOnParseError: true,
+                                useShortDoctype: true,
+                            });
+                            return IS_PROD ? minified : html;
+                        },
+                    },
+                ],
+            },
+        },
+    );
 }
 
 async function NotAPI(req, res) {
@@ -169,7 +158,7 @@ async function NotAPI(req, res) {
     let is_api = false;
     const {api} = req.params;
     const {en, de, id, q} = req.query;
-    await delay.range(150, 500);
+    await delay.range(150, 300);
     // morse code
     if (api == "morse") {
         if (en) {
@@ -223,7 +212,7 @@ async function NotAPI(req, res) {
             try {
                 const url = `https://api.spamwat.ch/banlist/${id}`;
                 const headers = {Authorization: `Bearer ${process.env.SPAMWATCH_API}`};
-                const ban = await fetch(url, {headers}).then((x) => x.json());
+                const ban = await fetch(url, {headers});
                 ban.date = new Date(ban.date * 1000);
                 data["error"] = "";
                 data = {...data, ...ban};
@@ -259,26 +248,60 @@ async function queueNotAPI(req, res) {
 
 const ping = new Cron("0 0 */6 * * *", {maxRuns: Infinity, paused: true}, async () => {
     try {
-        await fetch(WEBHOOK_SERVER, {timeout: 3000}); // 6 hours
+        await fetch(WEBHOOK_SERVER); // 6 hours
     } catch (_) {}
 });
 
 async function webhookInit() {
     if (IS_PROD || DEV_MODE) {
         try {
-            await tl.telegram.deleteWebhook();
+            await fetch(`deleteWebhook?url=${webhook_url}`, {prefixUrl: telegram});
         } catch (_) {}
         try {
-            tl.telegram
-                .getUpdates(0, 100, -1)
-                .then((up) => (up.length > 0 ? tl.telegram.getUpdates(0, 100, up[up.length - 1].update_id) : []))
-                .then(() => tl.telegram.setWebhook(`${WEBHOOK_SERVER.replace(/\/+$/, "")}${tl_secret}`));
+            const {result: up} = await fetch(`getUpdates?offset=-1`, {prefixUrl: telegram});
+            if (up.length > 0) {
+                await fetch(`getUpdates?offset=${up[up.length - 1].update_id}`, {prefixUrl: telegram});
+            }
+        } catch (_) {}
+        try {
+            await fetch(`setWebhook?url=${webhook_url}`, {prefixUrl: telegram});
         } catch (_) {}
     }
     if (!IS_PROD) {
-        const me = await tl.telegram.getMe();
-        console.log(me);
+        const {result} = await fetch(`getMe`, {prefixUrl: telegram});
+        console.info(result);
     }
+}
+
+async function sendMessage(chat_id, text, options) {
+    const default_json = {
+        chat_id,
+        text,
+        parse_mode: "html",
+        disable_web_page_preview: true,
+    };
+    const json = {...default_json, ...options};
+    const {result} = await fetch.post("sendMessage", {
+        prefixUrl: telegram,
+        json,
+    });
+    return result;
+}
+
+async function editMessageText(chat_id, message_id, text, options) {
+    const default_json = {
+        chat_id,
+        message_id,
+        text,
+        parse_mode: "html",
+        disable_web_page_preview: true,
+    };
+    const json = {...default_json, ...options};
+    const {result} = await fetch.post("editMessageText", {
+        prefixUrl: telegram,
+        json,
+    });
+    return result;
 }
 
 async function notify(res, api, data) {
@@ -289,27 +312,23 @@ async function notify(res, api, data) {
     }
     try {
         if (result.length < 4096) {
-            await tl.telegram.sendMessage(BOTLOG_CHATID, `<pre>${result}</pre>\n\n${user}`, {
-                parse_mode: "html",
-                disable_web_page_preview: true,
-            });
+            await sendMessage(BOTLOG_CHATID, `<pre>${result}</pre>\n\n${user}`);
         } else {
             const plain = user.replace(new RegExp("<[^>]*>", "g"), "");
             const filename = `${api}_${+res.locals.u["ip"].split("").filter(parseInt).join("")}.txt`;
             const data = `${result}\n\n${plain}`;
-            const source = Buffer.from(data);
-            const headers = {
-                filename,
-                source,
-            };
-            await tl.telegram.sendDocument(BOTLOG_CHATID, headers);
+            const form = new FormData();
+            form.append("chat_id", BOTLOG_CHATID);
+            form.append("document", Buffer.from(data), {filename});
+            await fetch.post("sendDocument", {
+                prefixUrl: telegram,
+                headers: form.getHeaders(),
+                body: form,
+            });
         }
     } catch (_) {
         try {
-            await tl.telegram.sendMessage(BOTLOG_CHATID, `<pre>${_}</pre>\n\n${user}`, {
-                parse_mode: "html",
-                disable_web_page_preview: true,
-            });
+            await sendMessage(BOTLOG_CHATID, `<pre>${_}</pre>\n\n${user}`);
         } catch (__) {}
     }
 }
@@ -325,57 +344,113 @@ function getUptime(uptime) {
     return `${days}d:${hours}h:${minutes}m:${seconds}s`;
 }
 
-tl.use((ctx, next) => {
-    switch (ctx.updateType) {
-        case "message":
-            if (new Date().getTime() / 1000 - ctx.message.date < 5 * 60) {
-                return next();
-            }
-            break;
-        case "callback_query":
-            if (ctx.callbackQuery.message && new Date().getTime() / 1000 - ctx.callbackQuery.message.date < 5 * 60) {
-                return next();
-            }
-            break;
-        default:
-            return next();
-    }
-});
-tl.command("ping", async (ctx) => {
-    if (ctx.chat.type !== "private" || ctx.from.is_bot) {
-        return;
-    }
-    const start = performance.now();
-    const chat_id = ctx.chat.id;
+app.post("/webhook/:id", bodyParser.json(), async (req, res, next) => {
+    const ctx = req.body;
+    const is_private = ctx.message.chat.type == "private";
+    const is_bot = ctx.message.from.is_bot;
+    const chat_id = ctx.message.chat.id;
     const msg_id = ctx.message.message_id;
-    const reply = await ctx.reply("Ping !", {reply_to_message_id: msg_id, disable_web_page_preview: true});
-    const end = performance.now();
-    const ms = Number((end - start) / 1000).toFixed(2);
-    const up = getUptime(Date.now() - StartTime);
-    await ctx.telegram.editMessageText(
-        reply.chat.id,
-        reply.message_id,
-        undefined,
-        `🏓 Pong !!\n<b>Speed</b> - <code>${ms}ms</code>\n<b>Uptime</b> - <code>${up}</code>`,
-        {parse_mode: "html", disable_web_page_preview: true},
-    );
-});
-tl.on("message", async (ctx) => {
-    if (ctx.chat.type !== "private" || ctx.from.is_bot) {
-        return;
+    const text = ctx.message.text || "";
+    // https://core.telegram.org/bots/api
+    let msg = {};
+    let skipping = false;
+    const blacklist = [""];
+    if (new Date().getTime() / 1000 - ctx.message.date < 5 * 60) {
+        skipping = false;
+    } else if (!is_private || is_bot) {
+        skipping = true;
+    } else if (blacklist.some((x) => text.toLowerCase().includes(x))) {
+        skipping = true;
     }
-    const SKIP = ["/ping"];
-    if (ctx.message.text && SKIP.some((x) => ctx.message.text.toLowerCase().includes(x))) {
-        return;
+    if (skipping) {
+        return res.status(200).send(msg);
     }
-    const chat_id = ctx.chat.id;
-    const msg_id = ctx.message.message_id;
-    const raw = JSON.stringify(ctx.message, null, 2);
-    await ctx.replyWithHTML(`<pre>${raw}</pre>`, {
-        reply_to_message_id: msg_id,
-        disable_web_page_preview: true,
-    });
+    if (text.match(/ping/gi)) {
+        const start = performance.now();
+        const reply = await sendMessage(chat_id, "Ping !", {disable_notification: true, reply_to_message_id: msg_id});
+        const end = performance.now();
+        const ms = Number((end - start) / 1000).toFixed(2);
+        const up = getUptime(Date.now() - StartTime);
+        msg = await editMessageText(
+            reply.chat.id,
+            reply.message_id,
+            `🏓 Pong !!\n<b>Speed</b> - <code>${ms}ms</code>\n<b>Uptime</b> - <code>${up}</code>`,
+        );
+    } else if (ctx.message) {
+        const raw = JSON.stringify(ctx.message, null, 2);
+        msg = await sendMessage(chat_id, `<pre>${raw}</pre>`, {
+            disable_notification: true,
+            reply_to_message_id: msg_id,
+        });
+    }
+    res.status(200).send(msg);
 });
+
+app.get("/api/:api", async (req, res, next) => {
+    if (UAS_BLACKLIST.some((x) => res.locals.u.source.toLowerCase().includes(x))) {
+        return res.status(403).send("Bot not allowed.");
+    }
+    if (IPS_BLACKLIST.includes(req.ip)) {
+        return next();
+    }
+    if (req.params.api) {
+        const {is_api, data} = await queueNotAPI(req, res);
+        if (is_api) {
+            // ping.pause();
+            res.set({
+                "Access-Control-Allow-Methods": "GET, POST",
+                "Access-Control-Allow-Headers": "content-type",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Credentials": "true",
+                "Content-Type": "application/json",
+            });
+            setNoCache(res);
+            res.status(200);
+            await notify(res, req.params.api, data);
+            // ping.resume();
+            return res.end(JSON.stringify({...data}, null, null));
+        }
+    }
+    return res.status(320).redirect("/");
+});
+
+app.engine("html", eta.renderFile);
+app.use(
+    sirv(resolve("public"), {
+        etag: false,
+        maxAge: 2592000,
+        immutable: true,
+    }),
+    compression(),
+    helmet({
+        contentSecurityPolicy: {
+            useDefaults: false,
+            directives: {
+                defaultSrc: ["'self'"],
+                scriptSrc: ["'self'", (req, res) => `'nonce-${res.locals.nonce}'`, "cdn.jsdelivr.net"],
+                imgSrc: ["'self'"],
+                styleSrc: ["'self'", (req, res) => `'nonce-${res.locals.nonce}'`],
+                fontSrc: ["'self'"],
+                objectSrc: ["'none'"],
+                upgradeInsecureRequests: [],
+            },
+        },
+        dnsPrefetchControl: {allow: true},
+    }),
+    permissionsPolicy({
+        features: {
+            accelerometer: [],
+            camera: [],
+            geolocation: [],
+            gyroscope: [],
+            magnetometer: [],
+            microphone: [],
+            payment: [],
+            usb: [],
+            interestCohort: [],
+        },
+    }),
+);
 
 app.get("/", async (req, res) => {
     const template = {
@@ -390,34 +465,6 @@ app.get("/", async (req, res) => {
     res.status(200);
     await renderPage(req, res, template);
 });
-
-app.get("/api/:api", async (req, res, next) => {
-    if (UAS_BLACKLIST.some((x) => res.locals.u.source.toLowerCase().includes(x))) {
-        return res.status(403).send("Bot not allowed.");
-    }
-    if (IPS_BLACKLIST.includes(req.ip)) {
-        return next();
-    }
-    if (req.params.api) {
-        const {is_api, data} = await queueNotAPI(req, res);
-        if (is_api) {
-            // ping.pause();
-            res.set("Access-Control-Allow-Methods", "GET, POST");
-            res.set("Access-Control-Allow-Headers", "content-type");
-            res.set("Access-Control-Allow-Origin", "*");
-            res.set("Access-Control-Allow-Credentials", "true");
-            res.set("Content-Type", "application/json");
-            setNoCache(res);
-            res.status(200);
-            await notify(res, req.params.api, data);
-            // ping.resume();
-            return res.json({...data});
-        }
-    }
-    return res.status(320).redirect("/");
-});
-
-app.use(tl.webhookCallback(tl_secret));
 
 app.all("*", async (req, res) => {
     const template = {
@@ -439,11 +486,12 @@ if (!IS_PROD) {
 }
 
 (async () => {
+    StartTime = Date.now();
     await webhookInit();
     if (IS_PROD) {
         ping.resume();
     }
-    StartTime = Date.now();
 })();
 
+// export default async (req, res) => await app.handler(req, res);
 export default app;
