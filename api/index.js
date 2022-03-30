@@ -352,37 +352,35 @@ app.post("/webhook/:id", bodyParser.json(), async (req, res, next) => {
     const text = ctx.message.text || "";
     // https://core.telegram.org/bots/api
     let msg = {};
-    let skipping = false;
     const blacklist = [""];
-    if (new Date().getTime() / 1000 - ctx.message.date < 5 * 60) {
-        skipping = false;
-    }
     if (ctx.message.chat.type != "private" || ctx.message.from.is_bot) {
-        skipping = true;
-    }
-    if (blacklist.some((x) => text.toLowerCase().includes(x))) {
-        skipping = true;
-    }
-    if (skipping) {
         return res.status(200).send(msg);
     }
-    if (text.match(/ping/gi)) {
-        const start = performance.now();
-        const reply = await sendMessage(chat_id, "Ping !", {disable_notification: true, reply_to_message_id: msg_id});
-        const end = performance.now();
-        const ms = Number((end - start) / 1000).toFixed(2);
-        const up = getUptime(Date.now() - StartTime);
-        msg = await editMessageText(
-            reply.chat.id,
-            reply.message_id,
-            `🏓 Pong !!\n<b>Speed</b> - <code>${ms}ms</code>\n<b>Uptime</b> - <code>${up}</code>`,
-        );
-    } else if (ctx.message) {
-        const raw = JSON.stringify(ctx.message, null, 2);
-        msg = await sendMessage(chat_id, `<pre>${raw}</pre>`, {
-            disable_notification: true,
-            reply_to_message_id: msg_id,
-        });
+    if (blacklist.some((x) => text.toLowerCase().includes(x))) {
+        return res.status(200).send(msg);
+    }
+    if (new Date().getTime() / 1000 - ctx.message.date < 5 * 60) {
+        if (text.match(/ping/gi)) {
+            const start = performance.now();
+            const reply = await sendMessage(chat_id, "Ping !", {
+                disable_notification: true,
+                reply_to_message_id: msg_id,
+            });
+            const end = performance.now();
+            const ms = Number((end - start) / 1000).toFixed(2);
+            const up = getUptime(Date.now() - StartTime);
+            msg = await editMessageText(
+                reply.chat.id,
+                reply.message_id,
+                `🏓 Pong !!\n<b>Speed</b> - <code>${ms}ms</code>\n<b>Uptime</b> - <code>${up}</code>`,
+            );
+        } else if (ctx.message) {
+            const raw = JSON.stringify(ctx.message, null, 2);
+            msg = await sendMessage(chat_id, `<pre>${raw}</pre>`, {
+                disable_notification: true,
+                reply_to_message_id: msg_id,
+            });
+        }
     }
     res.status(200).send(msg);
 });
