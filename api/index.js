@@ -347,8 +347,6 @@ function getUptime(uptime) {
 
 app.post("/webhook/:id", bodyParser.json(), async (req, res, next) => {
     const ctx = req.body;
-    const is_group = ctx.message.chat.type != "private";
-    const is_bot = ctx.message.from.is_bot;
     const chat_id = ctx.message.chat.id;
     const msg_id = ctx.message.message_id;
     const text = ctx.message.text || "";
@@ -358,9 +356,11 @@ app.post("/webhook/:id", bodyParser.json(), async (req, res, next) => {
     const blacklist = [""];
     if (new Date().getTime() / 1000 - ctx.message.date < 5 * 60) {
         skipping = false;
-    } else if (is_group || is_bot) {
+    }
+    if (ctx.message.chat.type != "private" || ctx.message.from.is_bot) {
         skipping = true;
-    } else if (blacklist.some((x) => text.toLowerCase().includes(x))) {
+    }
+    if (blacklist.some((x) => text.toLowerCase().includes(x))) {
         skipping = true;
     }
     if (skipping) {
@@ -491,10 +491,7 @@ if (!IS_PROD) {
     if (IS_PROD) {
         ping.resume();
     }
+    StartTime = Date.now();
 })();
 
-export default async (req, res) => {
-    StartTime = Date.now();
-    return await app.handler(req, res);
-};
-// export default app;
+export default app;
