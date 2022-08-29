@@ -25,6 +25,7 @@ import Cron from "croner";
 import geoip from "geoip-lite";
 
 // API dependency
+import RaySo from "rayso-api";
 import morse from "morse-decoder";
 import romans from "romans";
 import {Client as Genius} from "genius-lyrics";
